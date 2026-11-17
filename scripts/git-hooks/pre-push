@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# shift-clock pre-push 硬回归 hook（版本化于 scripts/git-hooks/，经 core.hooksPath 启用）。
+# 安装：scripts/install-hooks.sh（或跑一次 scripts/regression.sh 自动装上）。
+# 设计文档：docs/REGRESSION.md
+#
+# 行为：按本次推送实际变更的文件圈定回归范围（api / web / 全部 / 免测），
+# 调 scripts/regression.sh，任一失败即退出非 0 → git 中止推送。
+#
+# 紧急逃生口：git push --no-verify（仅限线上事故热修，事后必须补跑回归）。
+
+set -uo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+ZERO="0000000000000000000000000000000000000000"
+NEED_API=0
+NEED_WEB=0
+ANY_RANGE=0
+
+# 变更路径 → 回归范围。免测名单只收纯文档/资料目录；宁可错跑，不可漏跑。
+classify() {
+  case "$1" in
+    app/api/*) NEED_API=1 ;;
+    app/web/*|app/tsconfig.base.json|app/package.json) NEED_WEB=1 ;;
+    app/*) NEED_API=1; NEED_WEB=1 ;;                # e2e/脚本/Dockerfile 等，保守全跑
+    scripts/*|.github/*) NEED_API=1; NEED_WEB=1 ;;  # 回归/CI 基建自身变更 → 全量自检
+    docs/*|*.md|.cursor/*|.gitignore|.dockerignore) : ;;
+    *) NEED_API=1; NEED_WEB=1 ;;                    # 未知路径按最严处理
+  esac
+}
+
+# stdin 每行：<local ref> <local sha> <remote ref> <remote sha>
+while read -r _local_ref local_sha _remote_ref remote_sha; do
+  [ -z "${local_sha:-}" ] && continue
+  [ "$local_sha" = "$ZERO" ] && continue   # 删除远端分支：无代码进入远端，放行
+
+  if [ "$remote_sha" != "$ZERO" ] && git cat-file -e "$remote_sha" 2>/dev/null; then
+    base="$remote_sha"
+  else
+    # 新分支（或本地没有远端对象）：以 origin/main / origin/dev 的 merge-base 为基线
+    base="$(git merge-base "$local_sha" origin/main 2>/dev/null || true)"
+    [ -z "$base" ] && base="$(git merge-base "$local_sha" origin/dev 2>/dev/null || true)"
+  fi
+
+  if [ -z "$base" ]; then
+    NEED_API=1; NEED_WEB=1; ANY_RANGE=1   # 找不到基线 → 全量
+    continue
+  fi
+  ANY_RANGE=1
+  while IFS= read -r f; do
+    [ -n "$f" ] && classify "$f"
+  done < <(git diff --name-only "$base" "$local_sha")
+done
+
+[ "$ANY_RANGE" = 0 ] && exit 0  # 没有待推送的提交（如仅同步 tag）
+
+SCOPES=()
+[ "$NEED_API" = 1 ] && SCOPES+=(api)
+[ "$NEED_WEB" = 1 ] && SCOPES+=(web)
+
+if [ ${#SCOPES[@]} -eq 0 ]; then
+  echo "[pre-push] 本次推送仅含文档/资料变更，免回归放行。"
+  exit 0
+fi
+
+echo "[pre-push] 硬回归门禁：范围=${SCOPES[*]}（依据本次推送的变更路径）"
+if ! bash scripts/regression.sh "${SCOPES[@]}"; then
+  cat >&2 <<'EOF'
+
+[pre-push] ✖ 回归未通过，推送已被拦截。
+  1) 修复失败项后重新 git push；
+  2) 单独重跑：scripts/regression.sh <api|web>；
+  3) 仅限线上事故热修可 git push --no-verify 逃生，事后必须补跑回归并修红。
+EOF
+  exit 1
+fi
+echo "[pre-push] ✔ 回归通过，继续推送。"

@@ -1,0 +1,59 @@
+# 回归 CI 兜底：pre-push hook 是第一道门禁，此 workflow 是第二道。
+# 即使本地 --no-verify 逃生推送，这里也会把红灯暴露在 PR / 分支页上。
+# 设计文档：docs/REGRESSION.md
+name: Regression
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "app/**"
+      - "scripts/**"
+      - ".github/workflows/regression.yml"
+  pull_request:
+    paths:
+      - "app/**"
+      - "scripts/**"
+      - ".github/workflows/regression.yml"
+
+concurrency:
+  group: regression-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api:
+    name: API pytest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: app/api/pyproject.toml
+      - name: Install deps
+        working-directory: app/api
+        run: pip install -e ".[dev]"
+      - name: pytest
+        working-directory: app/api
+        run: pytest -q
+
+  web:
+    name: Web typecheck + build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Enable pnpm
+        run: corepack enable
+      - name: Install deps
+        working-directory: app/web
+        run: pnpm install --frozen-lockfile
+      - name: typecheck
+        working-directory: app/web
+        run: pnpm -r typecheck
+      - name: build
+        working-directory: app/web
+        run: pnpm -r build

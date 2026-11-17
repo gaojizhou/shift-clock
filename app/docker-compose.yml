@@ -1,0 +1,100 @@
+# 三班倒打卡系统 —— 本地/演示用编排。
+# 正式部署请替换数据库口令、关闭 FDC_TEST_MODE，并配置自己的反向代理与 TLS。
+#
+#   docker compose -f app/docker-compose.yml up -d --build
+#   docker compose -f app/docker-compose.yml run --rm api python -m app.seed   # 可选：载入合成演示数据
+#
+# 演示模式（允许 X-Test-User/Role 与 /auth/login）：
+#   FDC_TEST_MODE=1 docker compose -f app/docker-compose.yml up -d --build
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
+      POSTGRES_DB: ${POSTGRES_DB:-app}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-app}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7.4-alpine
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --appendfsync
+      - everysec
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - noeviction
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  api:
+    build:
+      context: ..
+      dockerfile: app/Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@db:5432/${POSTGRES_DB:-app}
+      FDC_TEST_MODE: ${FDC_TEST_MODE:-0}
+      FDC_ADMIN_TOTP_SECRET: ${FDC_ADMIN_TOTP_SECRET:-}
+      FDC_TEST_LOGIN_SECRET: ${FDC_TEST_LOGIN_SECRET:-}
+      STATIC_ADMIN: /app/web/apps/admin/dist
+      STATIC_H5: /app/web/apps/h5/dist
+      FDC_REQUEST_AUDIT_REDIS_URL: redis://redis:6379/0
+      FDC_REQUEST_AUDIT_MEMORY_QUEUE_SIZE: 5000
+      FDC_REQUEST_AUDIT_MEMORY_QUEUE_BYTES: 33554432
+      FDC_REQUEST_AUDIT_REDIS_WRITER_COUNT: 2
+      FDC_REQUEST_AUDIT_REDIS_BATCH_SIZE: 200
+      FDC_REQUEST_AUDIT_REDIS_FLUSH_INTERVAL_MS: 25
+      FDC_REQUEST_AUDIT_REDIS_CONNECT_TIMEOUT_SECONDS: 0.5
+      FDC_REQUEST_AUDIT_REDIS_COMMAND_TIMEOUT_SECONDS: 2
+      FDC_REQUEST_AUDIT_REDIS_PIPELINE_TIMEOUT_SECONDS: 2
+      FDC_REQUEST_AUDIT_STREAM_MAXLEN: 25000
+      FDC_REQUEST_AUDIT_WORKER_HEARTBEAT_TTL_SECONDS: 15
+      TZ: Asia/Shanghai
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  audit-log-worker:
+    build:
+      context: ..
+      dockerfile: app/Dockerfile
+    command: bash -c "python -m app.migrate --skip-online-index && python -m app.request_audit_worker"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@db:5432/${POSTGRES_DB:-app}
+      FDC_TEST_MODE: ${FDC_TEST_MODE:-0}
+      FDC_REQUEST_AUDIT_REDIS_URL: redis://redis:6379/0
+      FDC_REQUEST_AUDIT_REDIS_CONNECT_TIMEOUT_SECONDS: 0.5
+      FDC_REQUEST_AUDIT_REDIS_COMMAND_TIMEOUT_SECONDS: 2
+      FDC_REQUEST_AUDIT_WORKER_HEARTBEAT_TTL_SECONDS: 15
+      FDC_DB_POOL_SIZE: 2
+      FDC_DB_MAX_OVERFLOW: 0
+      FDC_DB_POOL_TIMEOUT_SECONDS: 5
+      TZ: Asia/Shanghai
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  pg_data:
+  redis_data:

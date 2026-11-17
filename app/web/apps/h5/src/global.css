@@ -1,0 +1,122 @@
+/* ============================================================================
+ * 三班倒打卡 H5 · 适老化 + 响应式全局样式
+ *  - rem 基准：html font-size 随视口宽度伸缩（移动端按宽度放大，桌面端封顶），
+ *    页面内 rem 单位与 antd-mobile 组件随之等比缩放，老年人更易读。
+ *  - 字号/触控区整体放大，按钮、列表项、输入框更大更好点。
+ *  - 桌面浏览器打开：限制最大宽度并居中、两边留白，避免内容被拉伸过宽。
+ * ========================================================================== */
+
+/* rem 基准：1rem 随宽度在 17px(窄屏)~21px(宽屏)之间，桌面超过约 480px 后封顶不再放大。
+ * 计算用 min(100vw, 480px) 让桌面端等价于 480px 宽的手机视觉，不会越拉越大。 */
+html {
+  font-size: clamp(17px, calc(min(100vw, 480px) / 23), 21px);
+  -webkit-text-size-adjust: 100%;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  overflow-x: hidden;
+  /* 桌面端两侧留白背景（页面主体限宽居中后，露出的背景） */
+  background: #eef1f5;
+  font-size: 1rem;
+  line-height: 1.6;
+  color: #1a1a1a;
+}
+
+/* 应用外壳：移动端满宽，桌面端限宽居中 + 阴影，避免过度拉伸 */
+#root {
+  max-width: 480px;
+  margin: 0 auto;
+  min-height: 100vh;
+  background: #f5f5f5;
+  box-shadow: 0 0 24px rgba(0, 0, 0, 0.06);
+  position: relative;
+}
+
+/* ---- 适老化：放大 antd-mobile 组件尺寸（其 CSS 变量为 px，改为 rem 跟随基准缩放）---- */
+:root {
+  --adm-font-size-main: 1rem;        /* 主字号 */
+  --adm-font-size-1: 0.7rem;
+  --adm-font-size-2: 0.75rem;
+  --adm-font-size-3: 0.8rem;
+  --adm-font-size-4: 0.85rem;
+  --adm-font-size-5: 0.9rem;
+  --adm-font-size-6: 1rem;
+  --adm-font-size-7: 1.1rem;
+  --adm-font-size-8: 1.25rem;
+  --adm-font-size-9: 1.45rem;
+  --adm-font-size-10: 1.7rem;
+  --adm-button-font-size: 1.05rem;   /* 按钮字更大 */
+}
+
+/* 列表项：更高、字更大，老年人易点 */
+.adm-list-item-content-main {
+  font-size: 1.05rem;
+}
+.adm-list-item-content {
+  padding-top: 0.7rem;
+  padding-bottom: 0.7rem;
+  min-height: 3rem;
+}
+
+/* 普通按钮：更高更大的点击区 */
+.adm-button {
+  min-height: 2.6rem;
+  font-size: 1.05rem;
+}
+.adm-button.adm-button-large {
+  min-height: 3.1rem;
+  font-size: 1.15rem;
+}
+
+/* NavBar 标题更大 */
+.adm-nav-bar-title {
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+
+/* 输入框/选择器更大更好点 */
+.adm-input-element,
+.adm-text-area-element {
+  font-size: 1.05rem;
+}
+.adm-selector-item {
+  font-size: 1.02rem;
+  padding: 0.5rem 0.8rem;
+}
+
+/* 原生 input[type=date] 等也放大 */
+input,
+select,
+textarea,
+button {
+  font-size: 1rem;
+}
+
+/* 桌面端：弹层（Popup/ActionSheet 等底部/顶部弹窗）渲染在 #root 之外、会占满整屏宽度。
+ * 与应用外壳一致限宽 480px 并居中，避免在电脑上铺满整屏。底部弹窗的滑入动画用的是
+ * 内联 transform(translateY)，这里只改 left/width/margin 做水平居中，不影响动画。 */
+@media (min-width: 481px) {
+  .adm-popup-body-position-bottom,
+  .adm-popup-body-position-top {
+    width: 480px !important;
+    left: 50% !important;
+    right: auto !important;
+    margin-left: -240px; /* -(480/2)：配合 left:50% 水平居中 */
+  }
+  /* 居中弹窗（Dialog/Modal/居中 Popup）限制最大宽度，避免在宽屏上过宽 */
+  :root {
+    --adm-center-popup-max-width: 420px;
+  }
+}

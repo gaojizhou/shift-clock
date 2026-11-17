@@ -1,0 +1,32 @@
+.DS_Store
+Thumbs.db
+
+# Environment / secrets
+**/.env
+**/.env.*
+!**/.env.example
+secret_file/
+
+# App monorepo
+app/node_modules/
+app/**/node_modules/
+app/**/dist/
+app/api/.venv/
+app/api/**/__pycache__/
+app/api/**/*.egg-info/
+app/api/.pytest_cache/
+app/api/.ruff_cache/
+app/web/**/node_modules/
+*.log
+*.db
+**/*.tsbuildinfo
+
+# Local agent / tooling artifacts
+.claude/
+.codex/
+.cursor/
+.playwright-mcp/
+verify-output/
+outputs/
+auto_test/
+
